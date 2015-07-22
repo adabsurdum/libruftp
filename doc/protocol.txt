@@ -1,0 +1,79 @@
+Reliable UDP File Transfer Protocol (RUFTP)
+  *
+Simply still-image acquisition (as opposed to video) is basically a
+file transfer.
+  *
+Server has two states:
+1) Idle -- no transfers are in progress. Server is waiting for
+   initiating commands
+2) Holding -- one or more initiating commands has been received.
+	Data was located (or generated), fragmented into its constitutive
+	packets and is being held until a timeout or discard command.
+  *
+This is really just an FTP tailored for reliable delivery of (complete)
+still images over an unreliable connection. It assumes a host with
+1. N <= 16 fixed-position cameras, possibly with different capabilities.
+2. The only remote configuration possible is resolution/format.
+3. All cameras' images are stored in a common queue.
+  *
+Nothing prevents this from being run "fast" and, thereby, approximating
+video, but that is NOT the intent. One of the ways real-time performance
+is achieved in true video is by eliding information between successive
+frames that has not changed. In other words, high performance in a video
+stream depends explicitly on the EXISTENCE OF A STREAM. Because of this,
+the network protocol is not entirely independent of the video codec
+...which quickly drags us into complexity that our main use cases just
+don't require.
+
+We are *primarily* interested in getting a "snapshot right now"
+  *
+All state-changing commands must be idempotent.
+All packets must be stateless--that is, they must carry all state
+necessary for full interpretation by receiver since no continuity
+between successive packets can be assumed.
+  *
+Primary motivation is snapshot mode:
+1. send configuration info to camera (at least resolution).
+2. capture and send a single video frame now.
+  *
+Packet types
+  *
+CFG Verify availability of a configuration is available.
+	CAMERA_ID	1
+	RESOLUTION	2,2
+	FORMAT		4	fourcc code
+  *
+ACK "Acknowledge" Verify that a configuration is available.
+	CAMERA_ID	1
+	RESOLUTION	2,2
+	FORMAT		4	fourcc code
+	RESPONSE	1	{0=no camera, 1=unsupp config, 2=ok }
+  *
+GET	"Get" Sent by client to server
+	CAMERA_ID	1
+	RESOLUTION	2,2
+	FORMAT		4	fourcc code
+  *
+Server will respond with empty DATA if format is unavailable.
+Otherwise, DAT packets constitute the ack.
+  *
+DAT "Data" Sent by server to client
+	LENGTH		2	of packet payload, [LENGTH...MD5], inclusive
+	N of M      2,2
+	IMAGE_ID   	2
+	FRAG_COORD	2,1	raster line, segment offset
+	RESOLUTION	2,2 height, width
+	FORMAT		4
+	<data>
+	MD5			4
+  *
+RES "Resend" Sent by client to server to fill in missing segments.
+	IMAGE_ID   	2
+	RESOLUTION	2,2
+	FORMAT		4	fourcc code
+
+I'm actually sending two protocols through the same port:
+1) ruftp
+2) video control
+Need to formalize which bits of first packet byte each relies on.
+

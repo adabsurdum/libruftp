@@ -1,0 +1,86 @@
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>    // for inet_pton
+#include <netinet/in.h>
+#include <errno.h>
+#include <assert.h>
+#include <err.h>
+
+#include "socket.h"
+
+#ifdef _DEBUG
+static const char *DBG_ERR_REPORT
+	= "\"%s\" in %s near (%s:%d)";
+#endif
+
+int udp_init_socket( short port, const char *if_addr ) {
+
+	int s = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
+
+	if( s >= 0 ) {
+
+		struct sockaddr_in addr;
+
+		addr.sin_family      = AF_INET;
+		addr.sin_port        = htons(port);
+		if( if_addr ) {
+			assert( sizeof(addr.sin_addr.s_addr) == 4 );
+			inet_pton( AF_INET, if_addr, & addr.sin_addr.s_addr );
+		} else
+			addr.sin_addr.s_addr = INADDR_ANY;
+
+		if( bind( s, (struct sockaddr *)&addr, sizeof(struct sockaddr))) {
+			close( s );
+#ifdef _DEBUG
+			warn( DBG_ERR_REPORT, "bind", __func__, __FILE__, __LINE__ );
+#endif
+			switch( errno ) {
+			case EACCES:	// The address is protected, and the user is not the superuser.
+			case EADDRINUSE:// The given address is already in use.
+			case EBADF:		// sockfd is not a valid descriptor.
+			case EINVAL:	// The socket is already bound to an address.
+			case ENOTSOCK:	// sockfd is a descriptor for a file, not a socket.
+			default:
+				;
+			}
+		}
+
+	} else {
+
+#ifdef _DEBUG
+		warn( DBG_ERR_REPORT, "socket", __func__, __FILE__, __LINE__ );
+#endif
+		switch( errno ) {
+		case EACCES:	// Permission to create a socket of the specified type and/or protocol is denied.
+		case EAFNOSUPPORT:// The implementation does not support the specified address family.
+		case EINVAL:	// Protocol unknown or unavailable or invalid flags.
+		case EMFILE:	// Process file table overflow.
+		case ENFILE:	// The system limit on the total number of open files has been reached.
+		case ENOBUFS:
+		case ENOMEM:	// Insufficient memory is available.  The socket cannot be created until sufficient resources are freed.
+		case EPROTONOSUPPORT:// The protocol type or the specified protocol is not supported within this domain.
+		default:
+			;
+		}
+	}
+	return s;
+}
+
+
+#ifdef UNIT_TEST_SOCKINIT
+int main( int argc, char *argv[] ) {
+	const short PORT
+		= argc > 1 ? atoi(argv[1]) : 1234;
+	int s = udp_init_socket( PORT, argc > 2 ? argv[2] : "localhost" );
+	if( s >= 0 ) {
+		close( s );
+	} else
+		warn( "udp_init_socket( %d )", PORT );
+	return EXIT_SUCCESS;
+}
+#endif
+
