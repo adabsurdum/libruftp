@@ -21,18 +21,17 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <arpa/inet.h>    // for inet_pton
+#include <arpa/inet.h>    // for inet_pton, inet_ntop
 #include <netinet/in.h>
 #include <errno.h>
 #include <assert.h>
-#include <err.h>
-
-#include "socket.h"
-
 #ifdef _DEBUG
+#include <err.h>
 static const char *DBG_ERR_REPORT
 	= "\"%s\" in %s near (%s:%d)";
 #endif
+
+#include "socket.h"
 
 int udp_init_socket( short port, const char *if_addr ) {
 
@@ -89,14 +88,29 @@ int udp_init_socket( short port, const char *if_addr ) {
 
 
 #ifdef UNIT_TEST_SOCKINIT
+#include <err.h>
 int main( int argc, char *argv[] ) {
 	const short PORT
-		= argc > 1 ? atoi(argv[1]) : 1234;
-	int s = udp_init_socket( PORT, argc > 2 ? argv[2] : "localhost" );
+		= argc > 1 ? atoi(argv[1]) : 0;
+	const char *ADDR
+		= argc > 2 ? argv[2] : NULL;
+	int s = udp_init_socket( PORT, ADDR );
+	printf( "udp_init_socket( %d, %s ) => %d\n", PORT, ADDR ? ADDR : "NULL", s );
+	assert( sizeof(struct sockaddr) == sizeof(struct sockaddr_in) );
 	if( s >= 0 ) {
+		struct sockaddr_in addr;
+		socklen_t length = sizeof(addr);
+		if( getsockname( s, (struct sockaddr*)(&addr), &length ) == 0 && sizeof(addr) == length ) {
+			char buf[128];
+			if( inet_ntop( AF_INET, &addr.sin_addr, buf, sizeof(buf) ) == buf ) {
+				printf( "bound to %s:%d\n", buf, ntohs( addr.sin_port ) );
+			} else
+				warn( "inet_ntop" );
+		} else
+			warn( "getsockname" );
 		close( s );
 	} else
-		warn( "udp_init_socket( %d )", PORT );
+		warn( "udp_init_socket( %d, %s ) => %d\n", PORT, ADDR ? ADDR : "NULL", s );
 	return EXIT_SUCCESS;
 }
 #endif
