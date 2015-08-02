@@ -40,6 +40,7 @@
 #include "util/boolvect.h"
 #include "util/bvector.h"
 #include "util/crc16.h"
+#include "util/sockinit.h"
 #ifdef DUMP_PACKETS
 #include "util/hexdump.h"
 #endif
@@ -217,7 +218,7 @@ void ruftp_server_loop( int socket_fd, struct data_source *provider, unsigned in
 	time_t time_to_abandon;
 	struct sockaddr_in addr;
 	socklen_t addrlen;
-	int n;
+	int n, req_fd;
 
 #ifdef HAVE_SIM_DROPPED_PACKETS
 	int dropped_packet_threshold = 0;
@@ -287,6 +288,13 @@ idle:
 	time_to_abandon = time(NULL) + max_silence_s;
 
 	/**
+	  * Create another socket on a random port to handle the GET
+	  * request. All subsequent comm for this request will occur
+	  * over this socket.
+	  */
+	req_fd = udp_init_socket( 0, NULL );
+
+	/**
 	  * Send and receive.
 	  */
 
@@ -308,8 +316,8 @@ idle:
 
 		FD_ZERO( &rd_set );
 		FD_ZERO( &wr_set );
-		FD_SET( socket_fd, &rd_set );
-		FD_SET( socket_fd, &wr_set );
+		FD_SET( req_fd, &rd_set );
+		FD_SET( req_fd, &wr_set );
 
 		/**
 		  * Calculate timeout.
@@ -319,7 +327,7 @@ idle:
 		  * No need to wait on write availability unless we actually have
 		  * something to send.
 		  */
-		ret = select( socket_fd + 1,
+		ret = select( req_fd + 1,
 			&rd_set,
 			_pending->popcount(_pending) > 0 ? &wr_set : NULL,
 			NULL /* fd_set * exceptfds */,
@@ -338,7 +346,7 @@ idle:
 
 		// Transmit first...
 
-		if( FD_ISSET( socket_fd, &wr_set) ) {
+		if( FD_ISSET( req_fd, &wr_set) ) {
 			const int frag
 				= _pending->pop( _pending );
 
@@ -376,7 +384,7 @@ idle:
 						frag, _pending->popcount(_pending) );
 					hexdump( iobuf, OFFSET_DAT_PAYLOAD, stderr );
 #endif
-					n = sendto( socket_fd, iobuf, SIZEOF_PACKET_BODY+SIZEOF_CRC16, 
+					n = sendto( req_fd, iobuf, SIZEOF_PACKET_BODY+SIZEOF_CRC16, 
 						0, (const struct sockaddr *)&_req_addr, sizeof(_req_addr) );
 #ifdef HAVE_SIM_DROPPED_PACKETS
 				} else {
@@ -412,9 +420,9 @@ idle:
 
 		// ...but remain receptive to incoming packets, too.
 
-		if( FD_ISSET( socket_fd, &rd_set ) ) {
+		if( FD_ISSET( req_fd, &rd_set ) ) {
 			addrlen = sizeof(addr);
-			n = recvfrom(socket_fd, iobuf, sizeof(iobuf), 0, (struct sockaddr *)&addr, &addrlen);
+			n = recvfrom(req_fd, iobuf, sizeof(iobuf), 0, (struct sockaddr *)&addr, &addrlen);
 			if( n < 0 ) {
 				switch( errno ) {
 				default:
@@ -445,6 +453,9 @@ idle:
 				warnx( "dropping packet from 2nd host" );
 		}
 	}
+
+	close( req_fd );
+	req_fd = -1;
 
 	if( _data )
 		_clear_request();

@@ -47,6 +47,7 @@ ssize_t ruftp_fetch( int s, struct sockaddr_in *server, uint16_t mtu, int retrie
 
 	static uint8_t iobuf[ 512 ];
 	int PACKET_LENGTH;
+	struct sockaddr_in reqsrv;
 	ssize_t result = -1;
 	uint8_t *payload = iobuf + OFFSET_DAT_PAYLOAD; // ...always in same place.
 
@@ -103,7 +104,7 @@ ssize_t ruftp_fetch( int s, struct sockaddr_in *server, uint16_t mtu, int retrie
 						missing,
 						iobuf,
 						sizeof(iobuf) );
-				if( udp_send( iobuf, PACKET_LENGTH, s, server ) )
+				if( udp_send( iobuf, PACKET_LENGTH, s, &reqsrv ) )
 					errx( -1, "foo!" );
 
 			}
@@ -122,13 +123,18 @@ ssize_t ruftp_fetch( int s, struct sockaddr_in *server, uint16_t mtu, int retrie
 
 		/**
 		  * ...and await a response (which can only be DAT packets).
+		  * The response to the GET request may be from a port (and even
+		  * address) different from the "well known" address:port to which
+		  * the initial GET is sent. All comm after the initial GET uses
+		  * the last address:port from which DAT packets were received.
+		  * This is a potential security issue.
 		  */
 
 		memset( iobuf, 0, sizeof(iobuf) );
 
-		addrlen = sizeof(struct sockaddr_in);
+		addrlen = sizeof(reqsrv);
 		n = recvfrom( s, iobuf, sizeof(iobuf),
-			0, (struct sockaddr *)server, &addrlen );
+			0, (struct sockaddr *)&reqsrv, &addrlen );
 
 		if( n < 0 ) {
 
@@ -278,7 +284,7 @@ ssize_t ruftp_fetch( int s, struct sockaddr_in *server, uint16_t mtu, int retrie
 	}
 
 	PACKET_LENGTH = build_packet_ack( RID, iobuf, sizeof(iobuf) );
-	if( udp_send( iobuf, PACKET_LENGTH, s, server ) )
+	if( udp_send( iobuf, PACKET_LENGTH, s, &reqsrv ) )
 		errx( -1, "foo!" );
 
 	if( data )
