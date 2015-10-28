@@ -1,4 +1,4 @@
--module(ruftpcam).
+-module(webcam_app).
 
 % Combining the boilerplate of both application and supervisor
 % in this one module for now.
@@ -23,9 +23,9 @@
 
 % application callback
 start(normal,StartArgs) ->
-	io:format("ruftpcam:start(~p)~n",[StartArgs]),
-	supervisor:start_link({local,server_sup},ruftpcam, StartArgs).
-% ...supervisor process will look for init in ruftpcam.
+	io:format("webcam_app:start(~p)~n",[StartArgs]),
+	supervisor:start_link({local,server_sup},webcam_app, StartArgs).
+% ...supervisor process will look for init in webcam_app.
 
 
 % If I understand things correctly this is called *after* Erlang has
@@ -33,7 +33,7 @@ start(normal,StartArgs) ->
 % it is not obligated itself to stop descendents(?)
 % application callback
 stop(State) ->
-	io:format("ruftpcam:stop(~p)~n",[State]),
+	io:format("webcam_app:stop(~p)~n",[State]),
 	ok.
 %	supervisor:terminate_child(server_sup,child_name).
 % ...the child being terminated is actually the app's supervisor which
@@ -51,11 +51,11 @@ init(StartArgs) ->
 	SupervisorFlags = #{strategy => one_for_one,
 		intensity => 1,
 		period => 5 },
-	ChildSpecs = [#{id => ruftpsrv_id,
-		start => { ruftpsrv, run_server, StartArgs},
+	ChildSpecs = [#{id => webcam_server_id,
+		start => { webcam_server, run_server, StartArgs},
 		restart => permanent,
 		shutdown => brutal_kill,
 		type => worker,
-		modules => [ruftpsrv]}],
+		modules => [webcam_server]}],
 	{ ok, { SupervisorFlags, ChildSpecs }}.
 
