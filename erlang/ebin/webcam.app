@@ -5,12 +5,12 @@
 % An app involving a supervision tree-based app additionally needs a tuple
 % with the 'mod' atom which names the module that exports the start/stop
 % behaviour.
-	{mod,          {webcam_app,[placeholder]}},
+	{mod,          {webcam_app,[17071]}},
 % An app packaged as a release by systools additionally requires the
 % following 5:
 	{description,  "Server of webcam imagery by RUFTP protocol"},
 	{vsn,          "0.1.0"},
-	{modules,      [webcam_app]}, % ALL modules INTRODUCED by this app.
+	{modules,      [webcam_app,webcam_server,snapshot]}, % ALL modules INTRODUCED by this app.
 	{registered,   []}, % ALL names of processes registered by this app.
 	{applications, [kernel,stdlib]}, % ...required BEFORE starting this app.
 % Following are entirely (?) optional.

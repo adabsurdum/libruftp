@@ -15,8 +15,6 @@
 % May be preferrable to just export it as compiler may drop it(?)
 %-compile(export_all).
 
-%-record(aggregation,{ready=false,pending=0,delinquent=0}).
-
 %loop(pending,avail,State) ->
 %loop(pending,unavail) ->
 %	ok.
@@ -51,11 +49,20 @@ init(StartArgs) ->
 	SupervisorFlags = #{strategy => one_for_one,
 		intensity => 1,
 		period => 5 },
-	ChildSpecs = [#{id => webcam_server_id,
+	ChildSpecs = [
+
+		#{id => webcam_server_id,
 		start => { webcam_server, run_server, StartArgs},
 		restart => permanent,
 		shutdown => brutal_kill,
 		type => worker,
-		modules => [webcam_server]}],
+		modules => [webcam_server]},
+
+		#{id => image_acq,
+		start => { snapshot, start, [ "./priv/snap" ] },
+		restart => permanent,
+		shutdown => brutal_kill,
+		type => worker,
+		modules => []} ],
 	{ ok, { SupervisorFlags, ChildSpecs }}.
 
