@@ -40,8 +40,8 @@ crc16( _Bin ) ->
 % Fragment Id 4
 % Fragment    *
 % CRC16       2
-mk_data_packet( _Rid, _Frags, _Selector ) 
-	-> << ?PKT_DAT, 0, 3:16/big >>.
+%mk_data_packet( Flag, Rid, ObjSize, Fragnum, Fragment ) 
+%	-> << ?PKT_DAT, Flag, 3:16/big >>.
 
 % - Frags is an (ordered!) list of binaries containing contiguous
 %   stretches of a file (a PNG image).
@@ -55,23 +55,42 @@ mk_data_packet( _Rid, _Frags, _Selector )
 % - Selector specifies which elements of the Frags list to transmit.
 
 transmit_loop( Rid, Frags, Selector, XmtSock, CliAddr, CliPort ) ->
+
 	io:format( "entered transmit_loop( ~p ~p )~n", [ CliAddr, CliPort ] ),
-	OutPacket = mk_data_packet( Rid, Frags, Selector ),
-	ok = gen_udp:send( XmtSock, CliAddr, CliPort, OutPacket ),
+
+	% Create packets from all the fragments
+	Size = lists:sum( lists:map( fun(El) -> size(El) end, Frags )),
+	lists:foreach( fun( N ) -> 
+			Flag = (if N =:= length(Frags) -> 1; true -> 0 end),
+			Frag = lists:nth(N,Frags),
+			% remember client uses 0-based FID, we use 1-based!
+			Body = << ?PKT_DAT, Flag, (size(Frag)):16, Rid:32, Size:32, (N-1):32, Frag/binary >>,
+			CRC  = crc16( Body ),
+			gen_udp:send( XmtSock, CliAddr, CliPort, << Body/bitstring, CRC:16 >> )
+			end,
+			Selector ),
+
 	receive
 		{udp, Sock2, Addr2, Port2, Pack } ->
 			ComputedCrc = crc16( binary_part( Pack, 0, size(Pack)-2 ) ),
-			<<Cmd/big, Flag/big, PSize:16/unsigned-big, RID:32/unsigned-big,
-				_Rem/binary>> = Pack,
+			<<Cmd, Flag, PSize:16/unsigned-big, RID:32/unsigned-big,
+				Payload:PSize/binary, _SentCRC:16/big>> = Pack,
 			% Verify RID is same.
 			io:fwrite( "crc=~4.16.0B ~p ~p ~p ~n",
 					[ ComputedCrc, Sock2, Addr2, Port2 ] ),
 			io:fwrite( "~2.16.0B ~2.16.0B ~4.16.0B ~8.16.0B~n",
 					[ Cmd, Flag, PSize, RID ] ),
-			transmit_loop( Rid, Frags, Selector, XmtSock, CliAddr, CliPort );
-		_ ->
-			io:format("Unexpected message in transmit_loop.~n", []),
-			transmit_loop( Rid, Frags, Selector, XmtSock, CliAddr, CliPort )
+			case Cmd of 
+			?PKT_RES ->
+				Newlist = lists:map( fun(N) ->
+					% remember client uses 0-based FID, we use 1-based!
+					1 + binary:decode_unsigned(binary:part(Payload,N,4)) end,
+					lists:seq( 0, size(Payload)-4,4) ),
+				transmit_loop( Rid, Frags, Newlist, XmtSock, CliAddr, CliPort );
+			?PKT_ACK ->
+				io:fwrite( "~2.16.0B ~2.16.0B ~4.16.0B ~8.16.0B. Exiting transmit_loop~n",
+						[ Cmd, Flag, PSize, RID ] )
+			end
 	after
 		10000 -> 
 			io:format("Abandoning RID ~8.16.0B.~n", [ Rid ]),
@@ -103,7 +122,7 @@ webcam_loop( WaiterArgs ) ->
 
 			% Acquire an image, fragment it...
 			Fragments = snapshot:get_fragmented_image( Mtu-?SIZEOF_DAT_FIXED_FIELDS ),
-			ObjSize = lists:sum( lists:map( fun(El) -> size(El) end, Fragments )),
+			%ObjSize = lists:sum( lists:map( fun(El) -> size(El) end, Fragments )),
 			% ...and hand it off to another child process to transmit.
 			{ok, Xmtsock} = gen_udp:open( 0, [binary,inet,{active,true}]),
 			% Don't link to this child; we don't care when it exits.
